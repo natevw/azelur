@@ -11,6 +11,18 @@ Builds a single binary. For now takes two arguments:
 
 From this repo it can be started via e.g. `cargo run localhost:4533 192.168.42.209:4533`.
 
+### Container
+
+For docker/podman/container can e.g.:
+
+```
+podman build -t azelur .
+
+# NOTE: the default entrypoint listens on `0.0.0.0:4533`,
+# so you only need to pass the upstream rotator address.
+podman run --name azel-proxy --rm -d -p 4533:4533 azelur 192.168.42.209:4533
+```
+
 ## What it does
 
 Passes along *translated* [rotctl protocol](https://hamlib.sourceforge.net/html/rigctld.1.html#PROTOCOL) positioning commands to an upstream rotator.
