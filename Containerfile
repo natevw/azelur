@@ -7,4 +7,4 @@ RUN cargo install --path .
 FROM docker.io/alpine
 COPY --from=build /usr/local/cargo/bin/azelur /usr/local/bin/azelur
 ENTRYPOINT ["azelur", "0.0.0.0:4533"]
-EXPOSE 4533/udp
+EXPOSE 4533/tcp
