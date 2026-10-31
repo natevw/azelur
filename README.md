@@ -38,7 +38,7 @@ but I've been using [nc](https://packages.debian.org/stable/netcat-openbsd) to d
 
 ```
 # first terminal window
-cargo run 127.0.0.1:4533 192.168.42.209:4533
+cargo run 0.0.0.0:4533 192.168.42.209:4533
 
 # second terminal window
 nc localhost 4533
