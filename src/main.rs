@@ -44,6 +44,7 @@ fn handle_client(
         };
         match cmd {
             "p" | "\\get_pos" => {
+                // TODO: account for upstream status here…
                 writeln!(&stream, "{:.2}", rotator.az)?;
                 writeln!(&stream, "{:.2}", rotator.el)?;
             },
@@ -52,10 +53,22 @@ fn handle_client(
                     writeln!(&stream, "RPRT -1")?;
                     continue;
                 };
-                println!("Goto Az: {az} El: {el}");
                 rotator.az = az;
                 rotator.el = el;
+                // TODO: ideally confirm upstream response first…
                 writeln!(&stream, "RPRT 0")?;
+                
+                let upstream_az = (az + rotator.az_adj) % 360.0;
+                let upstream_el = el + rotator.el_adj;
+                println!("Goto Az: {upstream_az} El: {upstream_el}");
+                // HACK: re-connect whenever position needs changing!
+                // TODO: share a signle/persistent upstream connection
+                let upstream =  TcpStream::connect("192.168.42.209:4533")?;
+                writeln!(&upstream, "P {:.2} {:.2}", upstream_az, upstream_el)?;
+            },
+            "x" | "\\get_adj" => {
+                writeln!(&stream, "{:.2}", rotator.az_adj)?;
+                writeln!(&stream, "{:.2}", rotator.el_adj)?;
             },
             "X" | "\\set_adj" => {
                 let Some((az, el)) = parse_pair(parts) else {
