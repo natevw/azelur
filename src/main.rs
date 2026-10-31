@@ -27,6 +27,7 @@ where
 fn handle_client(
     stream: TcpStream,
     rotator: Arc<Mutex<RotatorOfVirtuality>>,
+    upstream_addr: &str,
 ) -> Result<()> {
     let incoming = BufReader::new(&stream);
     for line in incoming.lines() {
@@ -58,12 +59,17 @@ fn handle_client(
                 // TODO: ideally confirm upstream response first…
                 writeln!(&stream, "RPRT 0")?;
                 
-                let upstream_az = (az + rotator.az_adj) % 360.0;
+                let _upstream_az = (az + rotator.az_adj) % 360.0;
+                let upstream_az = if _upstream_az < 0.0 {
+                    _upstream_az + 360.0
+                } else {
+                    _upstream_az
+                };
                 let upstream_el = el + rotator.el_adj;
                 println!("Goto Az: {upstream_az} El: {upstream_el}");
                 // HACK: re-connect whenever position needs changing!
                 // TODO: share a signle/persistent upstream connection
-                let upstream =  TcpStream::connect("192.168.42.209:4533")?;
+                let upstream =  TcpStream::connect(upstream_addr)?;
                 writeln!(&upstream, "P {:.2} {:.2}", upstream_az, upstream_el)?;
             },
             "x" | "\\get_adj" => {
@@ -87,16 +93,25 @@ fn handle_client(
 }
 
 fn main() -> Result<()> {
-    let listener = TcpListener::bind("0.0.0.0:4533")?;
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 3 {
+        eprintln!("usage: run <listen_addr:port> <upstream_addr:port>");
+        std::process::exit(1);
+    }
+    let our_addr = &args[1];
+    let rot_addr = &args[2];
+    
+    let listener = TcpListener::bind(our_addr)?;
     let rotator = Arc::new(Mutex::new(
         RotatorOfVirtuality::default()
     ));
     
     for stream in listener.incoming() {
         let stream = stream?;
+        let upstream = rot_addr.clone();
         let rotator = Arc::clone(&rotator);
-        thread::spawn(|| {
-            handle_client(stream, rotator).unwrap();
+        thread::spawn(move || {
+            handle_client(stream, rotator, &upstream).unwrap();
         });
     }
     Ok(())
