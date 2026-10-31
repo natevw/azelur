@@ -7,6 +7,8 @@ use std::{thread, time};
 struct RotatorOfVirtuality {
     az: f32,
     el: f32,
+    az_adj: f32,
+    el_adj: f32,
 }
 
 // HT: https://stackoverflow.com/a/34969944/179583
@@ -44,14 +46,25 @@ fn handle_client(
             "p" | "\\get_pos" => {
                 writeln!(&stream, "{:.2}", rotator.az)?;
                 writeln!(&stream, "{:.2}", rotator.el)?;
-            }
+            },
             "P" | "\\set_pos" => {
                 let Some((az, el)) = parse_pair(parts) else {
+                    writeln!(&stream, "RPRT -1")?;
                     continue;
                 };
                 println!("Goto Az: {az} El: {el}");
                 rotator.az = az;
                 rotator.el = el;
+                writeln!(&stream, "RPRT 0")?;
+            },
+            "X" | "\\set_adj" => {
+                let Some((az, el)) = parse_pair(parts) else {
+                    writeln!(&stream, "RPRT -1")?;
+                    continue;
+                };
+                println!("Adjust Az: {az} El: {el}");
+                rotator.az_adj = az;
+                rotator.el_adj = el;
                 writeln!(&stream, "RPRT 0")?;
             },
             _ => continue,
