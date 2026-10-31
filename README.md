@@ -56,15 +56,11 @@ via your `nc` sidechannel to change where the real (upstream) rotator point
 Note that the calibration values are stored "globally" (between connections to the proxy) but not persistently (between multiple runs of new proxy instances);
 they reset back to `X 0 0` each time you start running the proxy.
 
-Also, the calibration adjustment doesn't have any effect on the actual rotator
-until the next `P <az> <el>` command is sent. (This might be changed in the future.)
-
 ## Coming maybe
 
 Next ideas for this:
 
 * add algo for avoiding excessive cable wrap around mast
 * passthrough of unknown commands to upstream
-* send updated position upon calibration
 * better architecture/error handling
 * realtime position estimates?

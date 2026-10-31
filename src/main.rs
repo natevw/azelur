@@ -24,6 +24,28 @@ where
     return Some((az, el));
 }
 
+fn send_pos(
+    upstream_addr: &str,
+    rotator: &RotatorOfVirtuality
+) -> Result<()> {
+    // HACK: we re-connect whenever position needs changing!
+    // TODO: share a single/persistent upstream connection
+    let upstream =  TcpStream::connect(upstream_addr)?;
+    
+    let _upstream_az = (rotator.az + rotator.az_adj) % 360.0;
+    let upstream_az = if _upstream_az < 0.0 {
+        _upstream_az + 360.0
+    } else {
+        _upstream_az
+    };
+    
+    let upstream_el = rotator.el + rotator.el_adj;
+    
+    println!("Goto Az: {upstream_az} El: {upstream_el}");
+    writeln!(&upstream, "P {:.2} {:.2}", upstream_az, upstream_el)?;
+    Ok(())
+}
+
 fn handle_client(
     stream: TcpStream,
     rotator: Arc<Mutex<RotatorOfVirtuality>>,
@@ -58,19 +80,7 @@ fn handle_client(
                 rotator.el = el;
                 // TODO: ideally confirm upstream response first…
                 writeln!(&stream, "RPRT 0")?;
-                
-                let _upstream_az = (az + rotator.az_adj) % 360.0;
-                let upstream_az = if _upstream_az < 0.0 {
-                    _upstream_az + 360.0
-                } else {
-                    _upstream_az
-                };
-                let upstream_el = el + rotator.el_adj;
-                println!("Goto Az: {upstream_az} El: {upstream_el}");
-                // HACK: re-connect whenever position needs changing!
-                // TODO: share a signle/persistent upstream connection
-                let upstream =  TcpStream::connect(upstream_addr)?;
-                writeln!(&upstream, "P {:.2} {:.2}", upstream_az, upstream_el)?;
+                send_pos(upstream_addr, &rotator)?;
             },
             "x" | "\\get_adj" => {
                 writeln!(&stream, "{:.2}", rotator.az_adj)?;
@@ -85,6 +95,7 @@ fn handle_client(
                 rotator.az_adj = az;
                 rotator.el_adj = el;
                 writeln!(&stream, "RPRT 0")?;
+                send_pos(upstream_addr, &rotator)?;
             },
             _ => continue,
         }
