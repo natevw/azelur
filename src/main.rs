@@ -9,6 +9,19 @@ struct RotatorOfVirtuality {
     el: f32,
 }
 
+// HT: https://stackoverflow.com/a/34969944/179583
+fn parse_pair<'a, I>(mut parts: I) -> Option<(f32, f32)>
+where
+    I: Iterator<Item = &'a str>,
+{
+    let az_part = parts.next()?;
+    let el_part = parts.next()?;
+
+    let az: f32 = az_part.parse().ok()?;
+    let el: f32 = el_part.parse().ok()?;
+    return Some((az, el));
+}
+
 fn handle_client(
     stream: TcpStream,
     rotator: Arc<Mutex<RotatorOfVirtuality>>,
@@ -31,22 +44,16 @@ fn handle_client(
             "p" | "\\get_pos" => {
                 writeln!(&stream, "{:.2}", rotator.az)?;
                 writeln!(&stream, "{:.2}", rotator.el)?;
-            },
+            }
             "P" | "\\set_pos" => {
-                let (Some(az_part), Some(el_part)) = (parts.next(), parts.next()) else {
+                let Some((az, el)) = parse_pair(parts) else {
                     continue;
                 };
-                let Some(az) = az_part.parse::<f32>().ok() else {
-                    continue;
-                };
-                let Some(el) = el_part.parse::<f32>().ok() else {
-                    continue;
-                };
-                println!("Az: {az} El: {el}");
+                println!("Goto Az: {az} El: {el}");
                 rotator.az = az;
                 rotator.el = el;
                 writeln!(&stream, "RPRT 0")?;
-            }
+            },
             _ => continue,
         }
     }
