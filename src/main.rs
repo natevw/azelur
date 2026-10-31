@@ -41,7 +41,7 @@ fn send_pos(
     
     let upstream_el = rotator.el + rotator.el_adj;
     
-    println!("Goto Az: {upstream_az} El: {upstream_el}");
+    eprintln!("Goto Az: {upstream_az} El: {upstream_el}");
     writeln!(&upstream, "P {:.2} {:.2}", upstream_az, upstream_el)?;
     Ok(())
 }
@@ -54,7 +54,7 @@ fn handle_client(
     let incoming = BufReader::new(&stream);
     for line in incoming.lines() {
         let line = line?;
-        println!("{}: {}", stream.peer_addr().unwrap(), line);
+        eprintln!("{}: {}", stream.peer_addr().unwrap(), line);
         
         // WORKAROUND: SatDump complains if we respond too quickly…
         thread::sleep(time::Duration::from_millis(250));
@@ -91,7 +91,7 @@ fn handle_client(
                     writeln!(&stream, "RPRT -1")?;
                     continue;
                 };
-                println!("Adjust Az: {az} El: {el}");
+                eprintln!("Adjust Az: {az} El: {el}");
                 rotator.az_adj = az;
                 rotator.el_adj = el;
                 writeln!(&stream, "RPRT 0")?;
@@ -111,6 +111,8 @@ fn main() -> Result<()> {
     }
     let our_addr = &args[1];
     let rot_addr = &args[2];
+    eprintln!("Listening on {}", our_addr);
+    eprintln!("Upstream is: {}", rot_addr);
     
     let listener = TcpListener::bind(our_addr)?;
     let rotator = Arc::new(Mutex::new(
@@ -121,8 +123,11 @@ fn main() -> Result<()> {
         let stream = stream?;
         let upstream = rot_addr.clone();
         let rotator = Arc::clone(&rotator);
+        let peer = stream.peer_addr().unwrap();
         thread::spawn(move || {
+            eprintln!("Connection from {}", peer);
             handle_client(stream, rotator, &upstream).unwrap();
+            eprintln!("Done with {}", peer);
         });
     }
     Ok(())
