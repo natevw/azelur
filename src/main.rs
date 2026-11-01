@@ -56,9 +56,6 @@ fn handle_client(
         let line = line?;
         eprintln!("{}: {}", stream.peer_addr().unwrap(), line);
         
-        // WORKAROUND: SatDump complains if we respond too quickly…
-        thread::sleep(time::Duration::from_millis(250));
-        
         let mut rotator = rotator.lock().unwrap();
         let mut parts = line.split_ascii_whitespace();
         let cmd = parts.next();
@@ -67,20 +64,22 @@ fn handle_client(
         };
         match cmd {
             "p" | "\\get_pos" => {
-                // TODO: account for upstream status here…
+                // WORKAROUND: SatDump complains if we respond too quickly…
+                thread::sleep(time::Duration::from_millis(750));
                 writeln!(&stream, "{:.2}", rotator.az)?;
                 writeln!(&stream, "{:.2}", rotator.el)?;
             },
             "P" | "\\set_pos" => {
                 let Some((az, el)) = parse_pair(parts) else {
+                    eprintln!("BAD DATA: replying w/error");
                     writeln!(&stream, "RPRT -1")?;
                     continue;
                 };
                 rotator.az = az;
                 rotator.el = el;
-                // TODO: ideally confirm upstream response first…
                 writeln!(&stream, "RPRT 0")?;
                 send_pos(upstream_addr, &rotator)?;
+                eprintln!("[sent after az: {az} el: {el}]");
             },
             "x" | "\\get_adj" => {
                 writeln!(&stream, "{:.2}", rotator.az_adj)?;
@@ -91,11 +90,11 @@ fn handle_client(
                     writeln!(&stream, "RPRT -1")?;
                     continue;
                 };
-                eprintln!("Adjust Az: {az} El: {el}");
                 rotator.az_adj = az;
                 rotator.el_adj = el;
                 writeln!(&stream, "RPRT 0")?;
                 send_pos(upstream_addr, &rotator)?;
+                eprintln!("[sent after az_adj: {az} el_adj: {el}]");
             },
             _ => continue,
         }
