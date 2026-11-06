@@ -3,7 +3,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct RotatorOfVirtuality {
     az: f32,
     el: f32,
@@ -124,7 +124,7 @@ fn handle_client(
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        eprintln!("usage: run <listen_addr:port> <upstream_addr:port>");
+        eprintln!("usage: run <listen_addr:port> <upstream_addr:port> ['<az_adj> <el_adj>'");
         std::process::exit(1);
     }
     let our_addr = &args[1];
@@ -137,12 +137,24 @@ fn main() -> Result<()> {
         RotatorOfVirtuality::default()
     ));
     
+    if args.len() > 3 {
+        let adj_parts = args[3].split(" ");
+        let (az_adj, el_adj) = parse_pair(adj_parts).unwrap();
+        eprintln!("Setting initial adjustment of {:.2} {:.2}", az_adj, el_adj);
+        
+        let mut rot = rotator.lock().unwrap();
+        rot.az_adj = az_adj;
+        rot.el_adj = el_adj;
+        //eprintln!("{:#?}", rot);
+    }
+    
     let (curr_az, curr_el) = get_pos(rot_addr)?;
-    eprintln!("Current upstream position: {} {}", curr_az, curr_el);
+    eprintln!("Current upstream position is {:.2} {:.2}", curr_az, curr_el);
     {
         let mut rot = rotator.lock().unwrap();
         rot.az = curr_az - rot.az_adj;
         rot.el = curr_el - rot.el_adj;
+        //eprintln!("{:#?}", rot);
     }
     
     for stream in listener.incoming() {

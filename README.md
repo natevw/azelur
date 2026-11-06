@@ -66,7 +66,7 @@ is tracking a satellite you can send `X -1 0` … `X -1.5 0` … `X -2.5 0` ad
 via your `nc` sidechannel to change where the real (upstream) rotator point
 
 Note that the calibration values are stored "globally" (between connections to the proxy) but not persistently (between multiple runs of new proxy instances);
-they reset back to `X 0 0` each time you start running the proxy.
+they reset back to `X 0 0` each time you start running the proxy unless you pass an optional third argument containing *both* the initial values separated by a space e.g. `"-31.4 3.3"`.
 
 ## Coming maybe
 
