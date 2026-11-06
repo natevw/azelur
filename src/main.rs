@@ -1,7 +1,7 @@
-use std::io::{BufRead, BufReader, Result, Write};
+use std::io::{BufRead, BufReader, BufWriter, Result, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
-use std::{thread, time};
+use std::thread;
 
 #[derive(Default)]
 struct RotatorOfVirtuality {
@@ -46,12 +46,30 @@ fn send_pos(
     Ok(())
 }
 
+/*
+fn get_pos(
+    upstream_addr: &str,
+) -> Result<(f32, f32)> {
+    let upstream =  TcpStream::connect(upstream_addr)?;
+    let incoming = BufReader::new(&upstream);
+    writeln!(&upstream, "p")?;
+    let x = incoming.lines().map(|l| l.unwrap());
+    parse_pair(x)
+}
+*/
+
 fn handle_client(
     stream: TcpStream,
     rotator: Arc<Mutex<RotatorOfVirtuality>>,
     upstream_addr: &str,
 ) -> Result<()> {
     let incoming = BufReader::new(&stream);
+    
+    // NOTE: SatDump ± expects each command response to come back in a single packet (≈recv call)
+    // on our side, buffering the outgoing writes and flushing them seems to prevent it erroring out.
+    // see https://github.com/SatDump/SatDump/blob/9fee0793c7d42bea2d401d330422e18c33c126fa/src-core/common/tracking/rotator/rotcl_handler.cpp#L28
+    let mut outgoing = BufWriter::new(&stream);
+    
     for line in incoming.lines() {
         let line = line?;
         eprintln!("{}: {}", stream.peer_addr().unwrap(), line);
@@ -64,40 +82,39 @@ fn handle_client(
         };
         match cmd {
             "p" | "\\get_pos" => {
-                // WORKAROUND: SatDump complains if we respond too quickly…
-                thread::sleep(time::Duration::from_millis(750));
-                writeln!(&stream, "{:.2}", rotator.az)?;
-                writeln!(&stream, "{:.2}", rotator.el)?;
+                writeln!(outgoing, "{:.2}", rotator.az)?;
+                writeln!(outgoing, "{:.2}", rotator.el)?;
             },
             "P" | "\\set_pos" => {
                 let Some((az, el)) = parse_pair(parts) else {
                     eprintln!("BAD DATA: replying w/error");
-                    writeln!(&stream, "RPRT -1")?;
+                    writeln!(outgoing, "RPRT -1")?;
                     continue;
                 };
                 rotator.az = az;
                 rotator.el = el;
-                writeln!(&stream, "RPRT 0")?;
+                writeln!(outgoing, "RPRT 0")?;
                 send_pos(upstream_addr, &rotator)?;
                 eprintln!("[sent after az: {az} el: {el}]");
             },
             "x" | "\\get_adj" => {
-                writeln!(&stream, "{:.2}", rotator.az_adj)?;
-                writeln!(&stream, "{:.2}", rotator.el_adj)?;
+                writeln!(outgoing, "{:.2}", rotator.az_adj)?;
+                writeln!(outgoing, "{:.2}", rotator.el_adj)?;
             },
             "X" | "\\set_adj" => {
                 let Some((az, el)) = parse_pair(parts) else {
-                    writeln!(&stream, "RPRT -1")?;
+                    writeln!(outgoing, "RPRT -1")?;
                     continue;
                 };
                 rotator.az_adj = az;
                 rotator.el_adj = el;
-                writeln!(&stream, "RPRT 0")?;
+                writeln!(outgoing, "RPRT 0")?;
                 send_pos(upstream_addr, &rotator)?;
                 eprintln!("[sent after az_adj: {az} el_adj: {el}]");
             },
             _ => continue,
         }
+        outgoing.flush()?;
     }
     Ok(())
 }
