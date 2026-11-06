@@ -46,17 +46,19 @@ fn send_pos(
     Ok(())
 }
 
-/*
 fn get_pos(
     upstream_addr: &str,
 ) -> Result<(f32, f32)> {
     let upstream =  TcpStream::connect(upstream_addr)?;
     let incoming = BufReader::new(&upstream);
+    let mut lines = incoming.lines();
     writeln!(&upstream, "p")?;
-    let x = incoming.lines().map(|l| l.unwrap());
-    parse_pair(x)
+    let pair = vec![
+        lines.next().unwrap()?,
+        lines.next().unwrap()?,
+    ];
+    parse_pair(pair.iter().map(String::as_str)).ok_or_else(|| std::io::ErrorKind::InvalidData.into())
 }
-*/
 
 fn handle_client(
     stream: TcpStream,
@@ -134,6 +136,14 @@ fn main() -> Result<()> {
     let rotator = Arc::new(Mutex::new(
         RotatorOfVirtuality::default()
     ));
+    
+    let (curr_az, curr_el) = get_pos(rot_addr)?;
+    eprintln!("Current upstream position: {} {}", curr_az, curr_el);
+    {
+        let mut rot = rotator.lock().unwrap();
+        rot.az = curr_az - rot.az_adj;
+        rot.el = curr_el - rot.el_adj;
+    }
     
     for stream in listener.incoming() {
         let stream = stream?;
