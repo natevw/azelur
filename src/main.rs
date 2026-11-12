@@ -3,12 +3,14 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-type Angle = f32;
+type Degrees = f32;
+type AzAngle = Degrees;
+type ElAngle = Degrees;
 
 #[derive(Default, Debug, Copy, Clone)]
 struct Pos {
-    az: Angle,
-    el: Angle,
+    az: AzAngle,
+    el: ElAngle,
 }
 
 impl std::ops::Sub for Pos {
@@ -37,8 +39,8 @@ where
     let az_part = parts.next()?;
     let el_part = parts.next()?;
 
-    let az: Angle = az_part.parse().ok()?;
-    let el: Angle = el_part.parse().ok()?;
+    let az: Degrees = az_part.parse().ok()?;
+    let el: Degrees = el_part.parse().ok()?;
     return Some(Pos { az, el });
 }
 
