@@ -3,16 +3,33 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-#[derive(Default, Debug)]
-struct RotatorOfVirtuality {
+
+#[derive(Default, Debug, Copy, Clone)]
+struct Pos {
     az: f32,
     el: f32,
-    az_adj: f32,
-    el_adj: f32,
+}
+
+impl std::ops::Sub for Pos {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self::Output {
+        Self {
+            az: self.az - other.az,
+            el: self.el - other.el,
+        }
+    }
+}
+
+
+#[derive(Default, Debug)]
+struct RotatorOfVirtuality {
+    pos: Pos,
+    adj: Pos,
 }
 
 // HT: https://stackoverflow.com/a/34969944/179583
-fn parse_pair<'a, I>(mut parts: I) -> Option<(f32, f32)>
+fn parse_pair<'a, I>(mut parts: I) -> Option<Pos>
 where
     I: Iterator<Item = &'a str>,
 {
@@ -21,25 +38,25 @@ where
 
     let az: f32 = az_part.parse().ok()?;
     let el: f32 = el_part.parse().ok()?;
-    return Some((az, el));
+    return Some(Pos { az, el });
 }
 
 fn send_pos(
     upstream_addr: &str,
-    rotator: &RotatorOfVirtuality
+    virt: &RotatorOfVirtuality
 ) -> Result<()> {
     // HACK: we re-connect whenever position needs changing!
     // TODO: share a single/persistent upstream connection
     let upstream =  TcpStream::connect(upstream_addr)?;
     
-    let _upstream_az = (rotator.az + rotator.az_adj) % 360.0;
+    let _upstream_az = (virt.pos.az + virt.adj.az) % 360.0;
     let upstream_az = if _upstream_az < 0.0 {
         _upstream_az + 360.0
     } else {
         _upstream_az
     };
     
-    let upstream_el = rotator.el + rotator.el_adj;
+    let upstream_el = virt.pos.el + virt.adj.el;
     
     eprintln!("upstream az => {upstream_az}, el => {upstream_el}");
     writeln!(&upstream, "P {:.2} {:.2}", upstream_az, upstream_el)?;
@@ -48,7 +65,7 @@ fn send_pos(
 
 fn get_pos(
     upstream_addr: &str,
-) -> Result<(f32, f32)> {
+) -> Result<Pos> {
     let upstream =  TcpStream::connect(upstream_addr)?;
     let incoming = BufReader::new(&upstream);
     let mut lines = incoming.lines();
@@ -84,46 +101,42 @@ fn handle_client(
         };
         match cmd {
             "p" | "\\get_pos" => {
-                writeln!(outgoing, "{:.2}", rotator.az)?;
-                writeln!(outgoing, "{:.2}", rotator.el)?;
+                writeln!(outgoing, "{:.2}", rotator.pos.az)?;
+                writeln!(outgoing, "{:.2}", rotator.pos.el)?;
             },
             "P" | "\\set_pos" => {
-                let Some((az, el)) = parse_pair(parts) else {
+                let Some(pos) = parse_pair(parts) else {
                     eprintln!("BAD DATA: replying w/error");
                     writeln!(outgoing, "RPRT -1")?;
                     continue;
                 };
-                rotator.az = az;
-                rotator.el = el;
+                rotator.pos = pos;
                 writeln!(outgoing, "RPRT 0")?;
                 send_pos(upstream_addr, &rotator)?;
             },
             "x" | "\\get_adj" => {
-                writeln!(outgoing, "{:.2}", rotator.az_adj)?;
-                writeln!(outgoing, "{:.2}", rotator.el_adj)?;
+                writeln!(outgoing, "{:.2}", rotator.adj.az)?;
+                writeln!(outgoing, "{:.2}", rotator.adj.el)?;
             },
             "X" | "\\set_adj" => {
-                let Some((az, el)) = parse_pair(parts) else {
+                let Some(adj) = parse_pair(parts) else {
                     writeln!(outgoing, "RPRT -1")?;
                     continue;
                 };
-                rotator.az_adj = az;
-                rotator.el_adj = el;
+                rotator.adj = adj;
                 writeln!(outgoing, "RPRT 0")?;
                 send_pos(upstream_addr, &rotator)?;
             },
             "W" | "\\want_pos" => {
                 // change adjustment so rotator reads as desired
-                let Some((az, el)) = parse_pair(parts) else {
+                let Some(wanted) = parse_pair(parts) else {
                     writeln!(outgoing, "RPRT -1")?;
                     continue;
                 };
-                // sent_az = virt_az + az_adj
-                //  az_adj = sent_az - virt_az
-                rotator.az_adj = rotator.az - az;
-                rotator.el_adj = rotator.el - el;
-                rotator.az = az;
-                rotator.el = el;
+                //     sent = virt.pos + virt.adj
+                // virt.adj = sent - virt.pos
+                rotator.adj = rotator.pos - wanted;
+                rotator.pos = wanted;
                 writeln!(outgoing, "RPRT 0")?;
             },
             _ => continue,
@@ -151,21 +164,19 @@ fn main() -> Result<()> {
     
     if args.len() > 3 {
         let adj_parts = args[3].split(" ");
-        let (az_adj, el_adj) = parse_pair(adj_parts).unwrap();
-        eprintln!("Setting initial adjustment of {:.2} {:.2}", az_adj, el_adj);
+        let adj = parse_pair(adj_parts).unwrap();
+        eprintln!("Setting initial adjustment of {:.2} {:.2}", adj.az, adj.el);
         
         let mut rot = rotator.lock().unwrap();
-        rot.az_adj = az_adj;
-        rot.el_adj = el_adj;
+        rot.adj = adj;
         //eprintln!("{:#?}", rot);
     }
     
-    let (curr_az, curr_el) = get_pos(rot_addr)?;
-    eprintln!("Current upstream position is {:.2} {:.2}", curr_az, curr_el);
+    let real = get_pos(rot_addr)?;
+    eprintln!("Current upstream position is {:.2} {:.2}", real.az, real.el);
     {
         let mut rot = rotator.lock().unwrap();
-        rot.az = curr_az - rot.az_adj;
-        rot.el = curr_el - rot.el_adj;
+        rot.pos = real - rot.adj;
         //eprintln!("{:#?}", rot);
     }
     
