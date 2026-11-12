@@ -213,6 +213,8 @@ fn main() -> Result<()> {
     ));
     
     if args.len() > 3 {
+        // TODO: use an env var rather than arg……………!
+        // (also add an option to NOT read upstream pos…)
         let adj_parts = args[3].split(" ");
         let adj = parse_pair(adj_parts).unwrap();
         eprintln!("Setting initial adjustment of {:.2} {:.2}", adj.az, adj.el);
