@@ -2,6 +2,7 @@ use std::io::{BufRead, BufReader, BufWriter, Result, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 type Degrees = f32;
 type AzAngle = Degrees;
@@ -86,6 +87,7 @@ fn predict_rotation(curr: AzAngle, dest: AzAngle) -> Degrees {
 }
 
 const MAX_WINDING: AzAngle = 360.0;
+const UNWIND_DELAY: Duration = Duration::from_millis(500);
 
 fn recommended_midpoint(
     curr: AzAngle,
@@ -147,7 +149,10 @@ fn handle_client(
                 if let Some(mid_az) = recommended_midpoint(az_curr, az_diff, MAX_WINDING) {
                     eprint!("⤺");
                     rotator.pos.az = mid_az;
+                    // CAUTION: if upstream doesn't start this step by end of delay,
+                    // the main `send_pos` below will supersede this unwind request!
                     send_pos(upstream_addr, &rotator)?;
+                    thread::sleep(UNWIND_DELAY);
                 }
                 rotator.pos = pos;
                 send_pos(upstream_addr, &rotator)?;
