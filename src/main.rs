@@ -80,6 +80,33 @@ fn get_pos(
     parse_pair(pair.iter().map(String::as_str)).ok_or_else(|| std::io::ErrorKind::InvalidData.into())
 }
 
+fn predict_rotation(curr: AzAngle, dest: AzAngle) -> Degrees {
+    // TODO: make better prediction
+    dest - curr
+}
+
+const MAX_WINDING: AzAngle = 360.0;
+
+fn recommended_midpoint(
+    curr: AzAngle,
+    diff: Degrees,
+    max_mag: AzAngle,
+) -> Option<AzAngle> {
+    let past_max = curr + diff > max_mag;
+    let past_min = curr + diff < -max_mag;
+    if past_max || past_min {
+        // find an intermediate 180º from halfway to dest
+        // e.g. we're at MAX_WINDING=360 and diff is +90:
+        // halfway is 45°, whose antipode is (45 ± 180)°
+        // if we go there, next diff should then unwind.
+        let antimid = curr + diff / 2.0 + 180.0;
+        Some(antimid)
+    } else {
+        None
+    }
+}
+
+
 fn handle_client(
     stream: TcpStream,
     rotator: Arc<Mutex<RotatorOfVirtuality>>,
@@ -113,8 +140,16 @@ fn handle_client(
                     writeln!(outgoing, "RPRT -1")?;
                     continue;
                 };
-                rotator.pos = pos;
                 writeln!(outgoing, "RPRT 0")?;
+                
+                let az_curr = rotator.pos.az;
+                let az_diff = predict_rotation(az_curr, pos.az);
+                if let Some(mid_az) = recommended_midpoint(az_curr, az_diff, MAX_WINDING) {
+                    eprint!("⤺");
+                    rotator.pos.az = mid_az;
+                    send_pos(upstream_addr, &rotator)?;
+                }
+                rotator.pos = pos;
                 send_pos(upstream_addr, &rotator)?;
             },
             "x" | "\\get_adj" => {

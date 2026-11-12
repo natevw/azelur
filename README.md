@@ -83,4 +83,6 @@ Next ideas for this:
 nc -kl 4535  # have to manually reply e.g. 0<enter>0<enter>
 cargo run 0.0.0.0:4533 localhost:4535
 nc localhost 4533
+  P 360 25
+  P 365 0
 ```
