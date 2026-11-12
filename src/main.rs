@@ -99,7 +99,7 @@ fn recommended_midpoint(
     if past_max || past_min {
         // find an intermediate 180º from halfway to dest
         // e.g. we're at MAX_WINDING=360 and diff is +90:
-        // halfway is 45°, whose antipode is (45 ± 180)°
+        // halfway is 405°, whose antipode is (45 ± 180)°
         // if we go there, next diff should then unwind.
         let antimid = curr + diff / 2.0 + 180.0;
         Some(antimid)
