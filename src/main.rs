@@ -91,17 +91,19 @@ const UNWIND_DELAY: Duration = Duration::from_millis(500);
 
 fn recommended_midpoint(
     curr: AzAngle,
-    diff: Degrees,
+    diff: &mut Degrees,
     max_mag: AzAngle,
 ) -> Option<AzAngle> {
-    let past_max = curr + diff > max_mag;
-    let past_min = curr + diff < -max_mag;
+    let past_max = curr + *diff > max_mag;
+    let past_min = curr + *diff < -max_mag;
     if past_max || past_min {
         // find an intermediate 180º from halfway to dest
         // e.g. we're at MAX_WINDING=360 and diff is +90:
         // halfway is 405°, whose antipode is (45 ± 180)°
         // if we go there, next diff should then unwind.
-        let antimid = curr + diff / 2.0 + 180.0;
+        let antimid = curr + *diff / 2.0 + 180.0;
+        // adjust to newly intended (unwinding direction) difference
+        *diff = if past_max { *diff - 360.0 } else { *diff + 360.0 };
         Some(antimid)
     } else {
         None
@@ -145,8 +147,12 @@ fn handle_client(
                 writeln!(outgoing, "RPRT 0")?;
                 
                 let az_curr = rotator.pos.az;
-                let az_diff = predict_rotation(az_curr, pos.az);
-                if let Some(mid_az) = recommended_midpoint(az_curr, az_diff, MAX_WINDING) {
+                let mut az_diff = predict_rotation(az_curr, pos.az);
+                if let Some(mid_az) = recommended_midpoint(
+                    az_curr,
+                    &mut az_diff,
+                    MAX_WINDING
+                ) {
                     eprint!("⤺");
                     rotator.pos.az = mid_az;
                     // CAUTION: if upstream doesn't start this step by end of delay,
@@ -154,7 +160,8 @@ fn handle_client(
                     send_pos(upstream_addr, &rotator)?;
                     thread::sleep(UNWIND_DELAY);
                 }
-                rotator.pos = pos;
+                // we accumulate predicted upstream rotation into `virt.pos`
+                rotator.pos = Pos { az: az_curr + az_diff, el: pos.el };
                 send_pos(upstream_addr, &rotator)?;
             },
             "x" | "\\get_adj" => {
