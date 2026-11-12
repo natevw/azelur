@@ -41,7 +41,7 @@ fn send_pos(
     
     let upstream_el = rotator.el + rotator.el_adj;
     
-    eprintln!("Goto Az: {upstream_az} El: {upstream_el}");
+    eprintln!("upstream az => {upstream_az}, el => {upstream_el}");
     writeln!(&upstream, "P {:.2} {:.2}", upstream_az, upstream_el)?;
     Ok(())
 }
@@ -97,7 +97,6 @@ fn handle_client(
                 rotator.el = el;
                 writeln!(outgoing, "RPRT 0")?;
                 send_pos(upstream_addr, &rotator)?;
-                eprintln!("[sent after az: {az} el: {el}]");
             },
             "x" | "\\get_adj" => {
                 writeln!(outgoing, "{:.2}", rotator.az_adj)?;
@@ -112,7 +111,6 @@ fn handle_client(
                 rotator.el_adj = el;
                 writeln!(outgoing, "RPRT 0")?;
                 send_pos(upstream_addr, &rotator)?;
-                eprintln!("[sent after az_adj: {az} el_adj: {el}]");
             },
             _ => continue,
         }
