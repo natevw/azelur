@@ -112,6 +112,20 @@ fn handle_client(
                 writeln!(outgoing, "RPRT 0")?;
                 send_pos(upstream_addr, &rotator)?;
             },
+            "W" | "\\want_pos" => {
+                // change adjustment so rotator reads as desired
+                let Some((az, el)) = parse_pair(parts) else {
+                    writeln!(outgoing, "RPRT -1")?;
+                    continue;
+                };
+                // sent_az = virt_az + az_adj
+                //  az_adj = sent_az - virt_az
+                rotator.az_adj = rotator.az - az;
+                rotator.el_adj = rotator.el - el;
+                rotator.az = az;
+                rotator.el = el;
+                writeln!(outgoing, "RPRT 0")?;
+            },
             _ => continue,
         }
         outgoing.flush()?;
