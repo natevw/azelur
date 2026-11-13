@@ -290,7 +290,8 @@ fn main() -> Result<()> {
     ));
     
     // ~HACK: trigger any parse error on startup
-    _ = get_max_winding();
+    let maxw = get_max_winding();
+    assert!(maxw >= 180.0);  // anything less is nonsensical
     
     if let Ok(adj) = std::env::var("AZEL_INITIAL_ADJ") {
         let adj_parts = adj.split(" ");
