@@ -93,8 +93,60 @@ fn get_pos(
 }
 
 fn predict_rotation(curr: AzAngle, dest: AzAngle) -> Degrees {
-    // TODO: make better prediction
-    dest - curr
+    let naïve = dest - curr;
+    let rotation = naïve % 360.0;
+    if rotation > 180.0 {
+        rotation - 360.0
+    } else if rotation < -180.0 {
+        rotation + 360.0
+    } else {
+        rotation
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple_rotations() {
+        assert_eq!(
+            predict_rotation(5.0, 10.0), 5.0,
+        );
+        assert_eq!(
+            predict_rotation(10.0, 5.0), -5.0,
+        );
+        assert_eq!(
+            predict_rotation(365.0, 370.0), 5.0,
+        );
+        assert_eq!(
+            predict_rotation(365.0, 5.0), 0.0,
+        );
+        assert_eq!(
+            predict_rotation(365.0, -355.0), 0.0,
+        );
+        assert_eq!(
+            predict_rotation(0.0, 185.0), -175.0,
+        );
+        assert_eq!(
+            predict_rotation(0.0, -185.0), 175.0,
+        );
+        assert_eq!(
+            predict_rotation(0.0, -175.0), -175.0,
+        );
+        assert_eq!(
+            predict_rotation(360.0, 175.0), 175.0,
+        );
+        assert_eq!(
+            predict_rotation(-123456.0, 42.0), 18.0,
+        );
+        assert_eq!(
+            predict_rotation(-123456.0, -123467.0), -11.0,
+        );
+        assert_eq!(
+            predict_rotation(-123456.0, 123186.0), 42.0,
+        );
+    }
 }
 
 const MAX_WINDING: AzAngle = 360.0;
