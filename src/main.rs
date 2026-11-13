@@ -219,16 +219,15 @@ fn main() -> Result<()> {
         
         let mut rot = rotator.lock().unwrap();
         rot.adj = adj;
-        //eprintln!("{:#?}", rot);
     }
     
-    let fetch_opt = std::env::var("AZEL_FETCH_POS")
-        .map_or(String::from("0"), |s| s.to_lowercase());
-    let do_fetch = match fetch_opt.as_str() {
-        "1" | "true" | "yes" => true,
-        _ => false,
-    };
-    if do_fetch {
+    if let Ok(pos) = std::env::var("AZEL_INITIAL_POS") {
+        let pos_parts = pos.split(" ");
+        let pos = parse_pair(pos_parts).unwrap();
+        eprintln!("Setting initial position to {:.2} {:.2}", pos.az, pos.el);
+        let mut rot = rotator.lock().unwrap();
+        rot.pos = pos;
+    } else {
         let real = get_pos(rot_addr)?;
         eprintln!("Current upstream position is {:.2} {:.2}", real.az, real.el);
         let mut rot = rotator.lock().unwrap();
