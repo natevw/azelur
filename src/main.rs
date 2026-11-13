@@ -25,6 +25,17 @@ impl std::ops::Sub for Pos {
     }
 }
 
+impl std::ops::Add for Pos {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self::Output {
+        Self {
+            az: self.az + other.az,
+            el: self.el + other.el,
+        }
+    }
+}
+
 
 #[derive(Default, Debug)]
 struct RotatorOfVirtuality {
@@ -184,8 +195,10 @@ fn handle_client(
                     continue;
                 };
                 //     sent = virt.pos + virt.adj
-                // virt.adj = sent - virt.pos
-                rotator.adj = rotator.pos - wanted;
+                // keep `sent` same while making `virt.pos = wanted`
+                // i.e. `virt0.pos + virt0.adj = wanted + virt1.adj`
+                let sent = rotator.pos + rotator.adj;
+                rotator.adj = sent - wanted;
                 rotator.pos = wanted;
                 writeln!(outgoing, "RPRT 0")?;
             },

@@ -76,6 +76,16 @@ You should get back a `RPRT 0` response to your `X …` command.
 You can enter a single `x` on a line (or `\set_adj AZ EL` / `\get_adj`)
 to read back the currently set offset.
 
+There's also a "math helper" shortcut `W <az> <el>` which will calculate the adjustment for you. For example, if you're calibrating against a geostationary satellite:
+
+1. Start looking for the satellite at `P 203.9 34`
+2. Drive it around until you find it at e.g. `P 172.5 37.3`
+3. Tell azelur you **W**ant the current position to be: `W 203.9 34`
+4. Azelur will calculate and update the necessary adjustment
+  * in this example `x` would return `-31.4`/`3.3` (if there had been no prior adjustment)
+
+### Misc. details
+
 This offset is shared between all connections to the proxy. So while SatDump
 is tracking a satellite you can send `X -1 0` … `X -1.5 0` … `X -2.5 0` adjustments
 via your `nc` sidechannel to change where the real (upstream) rotator point
