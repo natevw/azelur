@@ -1,6 +1,6 @@
 use std::io::{BufRead, BufReader, BufWriter, Result, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -149,7 +149,19 @@ mod tests {
     }
 }
 
-const MAX_WINDING: AzAngle = 360.0;
+// HT: https://stackoverflow.com/questions/19605132/is-it-possible-to-use-global-variables-in-rust/76394993#76394993
+static MAX_WINDING: OnceLock<AzAngle> = OnceLock::new();
+
+fn get_max_winding() -> AzAngle {
+    *MAX_WINDING.get_or_init(|| {
+        if let Ok(max) = std::env::var("AZEL_MAX_WINDING") {
+            max.parse().unwrap()
+        } else {
+            360.0
+        }
+    })
+}
+
 const UNWIND_DELAY: Duration = Duration::from_millis(500);
 
 fn recommended_midpoint(
@@ -214,7 +226,7 @@ fn handle_client(
                 if let Some(mid_az) = recommended_midpoint(
                     az_curr,
                     &mut az_diff,
-                    MAX_WINDING
+                    get_max_winding(),
                 ) {
                     eprint!("⤺");
                     rotator.pos.az = mid_az;
@@ -276,6 +288,9 @@ fn main() -> Result<()> {
     let rotator = Arc::new(Mutex::new(
         RotatorOfVirtuality::default()
     ));
+    
+    // ~HACK: trigger any parse error on startup
+    _ = get_max_winding();
     
     if let Ok(adj) = std::env::var("AZEL_INITIAL_ADJ") {
         let adj_parts = adj.split(" ");

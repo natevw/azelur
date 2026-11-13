@@ -28,8 +28,12 @@ Also supports some optional environment variables:
 
 * `AZEL_INITIAL_ADJ` — a string containing any initial `"<az_adj> <el_adj>"` values you want to pre-populate
 * `AZEL_INITIAL_POS` — by default azelur will query the upstream rotator, otherwise to avoid this you can provide an initial (virtual) position
+* `AZEL_MAX_WINDING` — azelur will *attempt* to keep the rotator from winding the cables more than this amount (assuming the cables are most slack/neutral at the 0° position)
+  * defaults to `360.0` i.e. a full rotation in *either* direction.
+  * when azelur detects that an incoming position will over-wind the upstream rotator, it sends the rotator to an intermediate position first (in the opposite direction) before continuing to unwind from there to the requested position
+  * ⚠️ CAUTION: the current implementation makes certain assumptions about how/when the rotator responds to commands, which are only tentatively true on my own rotator (Antrunner Pro) and may be completely ineffective on your rotator. Consider this an **EXPERIMENTAL** feature and do not rely on it. Not even if it seems to initially work!
 
-e.g. to start with an initial calibration but still querying the upstream for its own initial (i.e. current) position:
+As a general example of passing options, here we provide an initial calibration but still let it query the upstream for its own initial (i.e. current) position:
 
 ```
 AZEL_INITIAL_ADJ="-5 +1.5" azelur 0.0.0.0:4533 192.168.42.209:4533
