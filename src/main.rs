@@ -212,10 +212,8 @@ fn main() -> Result<()> {
         RotatorOfVirtuality::default()
     ));
     
-    if args.len() > 3 {
-        // TODO: use an env var rather than arg……………!
-        // (also add an option to NOT read upstream pos…)
-        let adj_parts = args[3].split(" ");
+    if let Ok(adj) = std::env::var("AZEL_INITIAL_ADJ") {
+        let adj_parts = adj.split(" ");
         let adj = parse_pair(adj_parts).unwrap();
         eprintln!("Setting initial adjustment of {:.2} {:.2}", adj.az, adj.el);
         
@@ -224,9 +222,15 @@ fn main() -> Result<()> {
         //eprintln!("{:#?}", rot);
     }
     
-    let real = get_pos(rot_addr)?;
-    eprintln!("Current upstream position is {:.2} {:.2}", real.az, real.el);
-    {
+    let fetch_opt = std::env::var("AZEL_FETCH_POS")
+        .map_or(String::from("0"), |s| s.to_lowercase());
+    let do_fetch = match fetch_opt.as_str() {
+        "1" | "true" | "yes" => true,
+        _ => false,
+    };
+    if do_fetch {
+        let real = get_pos(rot_addr)?;
+        eprintln!("Current upstream position is {:.2} {:.2}", real.az, real.el);
         let mut rot = rotator.lock().unwrap();
         rot.pos = real - rot.adj;
         //eprintln!("{:#?}", rot);
