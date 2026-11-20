@@ -3,6 +3,7 @@ mod upstream;
 
 use std::io::{BufRead, BufReader, BufWriter, Result, Write};
 use std::net::{TcpListener, TcpStream};
+use std::fs::OpenOptions;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -153,7 +154,10 @@ fn main() -> Result<()> {
     
     
     let _upstream: Box<dyn UpstreamRotator + Send> = if rot_addr.starts_with("/") {
-        let device = std::fs::File::open(rot_addr)?;
+        let device = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(rot_addr)?;
         Box::new(GrblTrker::new(device))
     } else {
         let socket = TcpStream::connect(rot_addr)?;
