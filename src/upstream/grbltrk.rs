@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Result, Write, Error};
+use std::io::{BufRead, BufReader, Result, Read, Write, Error};
 use std::io::ErrorKind::InvalidData;
 
 use std::fs::File;
@@ -7,19 +7,27 @@ use crate::UpstreamRotator;
 
 // xref https://github.com/Hamlib/Hamlib/blob/master/rotators/grbltrk/grbltrk.c
 
-// TODO: make this a generic over some pre-opened `<T: Read + Write>`?
-// (because grbltrk can technically work over WiFi even if it usually doesn't……)
 #[derive(Debug)]
-pub struct GrblTrker {
-    dev: File,
+pub struct GrblTrker<T: Read + Write> {
+    dev: T,
 }
 
-impl GrblTrker {
-    pub fn new(path: impl Into<String>) -> Self {
-        let path: String = path.into();
-        Self {
-            dev: File::open(&path).unwrap(),
-        }
+impl<T: Read + Write> GrblTrker<T> {
+    pub fn new(dev: T) -> Self {
+        Self { dev }
+    }
+}
+
+// HT: https://internals.rust-lang.org/t/why-is-there-no-tryclone-trait/19977
+trait TryClone: Sized {
+    fn try_clone(&self) -> Result<Self>;
+}
+
+impl TryClone for File {
+    fn try_clone(&self) -> Result<Self> {
+        // Resolves to the inherent `File::try_clone`, not this trait method,
+        // because inherent methods take priority over trait methods.
+        File::try_clone(self)
     }
 }
 
@@ -89,12 +97,12 @@ mod tests {
     }
 }
 
-
-impl UpstreamRotator for GrblTrker {
+impl<T: Read + Write + TryClone> UpstreamRotator for GrblTrker<T> {
     fn read_pos(&self) -> Result<Pos> {
-        let incoming = BufReader::new(&self.dev);
+        let incoming = BufReader::new(self.dev.try_clone()?);
+        let mut outgoing = self.dev.try_clone()?;
         let mut lines = incoming.lines();
-        write!(&self.dev, "?")?;
+        write!(outgoing, "?")?;
         let resp = lines.next().unwrap()?;
         resp.starts_with("<").ok_or(Error::from(InvalidData))?;
         let (x, y) = parse_status(&resp)
@@ -103,6 +111,7 @@ impl UpstreamRotator for GrblTrker {
     }
 
     fn send_pos(&self, mut p: Pos) -> Result<()> {
+        let mut outgoing = self.dev.try_clone()?;
         p.az %= 360.0;
         if p.az < 0.0 {
             p.az += 360.0;
@@ -113,7 +122,7 @@ impl UpstreamRotator for GrblTrker {
         );
         eprintln!("upstream X => {}, Y => {}", x, y);
         // xref https://github.com/Hamlib/Hamlib/blob/1b3fb4a6a30652c37a45b38cd766f5de515231b3/rotators/grbltrk/grbltrk.c#L313
-        writeln!(&self.dev, "G0 X{:.4} Y{:.4}", x, y)?;
+        writeln!(outgoing, "G0 X{:.4} Y{:.4}", x, y)?;
         Ok(())
     }
 }

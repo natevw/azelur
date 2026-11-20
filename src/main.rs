@@ -153,7 +153,8 @@ fn main() -> Result<()> {
     
     
     let _upstream: Box<dyn UpstreamRotator + Send> = if rot_addr.starts_with("/") {
-        Box::new(GrblTrker::new(rot_addr))
+        let device = std::fs::File::open(rot_addr)?;
+        Box::new(GrblTrker::new(device))
     } else {
         Box::new(Rotctled::new(rot_addr))
     };
