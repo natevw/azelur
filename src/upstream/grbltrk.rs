@@ -7,15 +7,19 @@ use crate::UpstreamRotator;
 
 // xref https://github.com/Hamlib/Hamlib/blob/master/rotators/grbltrk/grbltrk.c
 
+// TODO: make this a generic over some pre-opened `<T: Read + Write>`?
+// (because grbltrk can technically work over WiFi even if it usually doesn't……)
 #[derive(Debug)]
 pub struct GrblTrker {
-    path: String,
     dev: File,
 }
 
-impl Clone for GrblTrker {
-    fn clone(&self) -> Self {
-        Self::new(&self.path)
+impl GrblTrker {
+    pub fn new(path: impl Into<String>) -> Self {
+        let path: String = path.into();
+        Self {
+            dev: File::open(&path).unwrap(),
+        }
     }
 }
 
@@ -85,16 +89,6 @@ mod tests {
     }
 }
 
-
-impl GrblTrker {
-    pub fn new(path: impl Into<String>) -> Self {
-        let path: String = path.into();
-        Self {
-            path: path.clone(),
-            dev: File::open(&path).unwrap(),
-        }
-    }
-}
 
 impl UpstreamRotator for GrblTrker {
     fn read_pos(&self) -> Result<Pos> {
