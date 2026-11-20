@@ -33,28 +33,14 @@ fn from_grbl(coord: GrblCoord) -> Degrees {
 
 fn parse_status(resp: &str) -> Option<(GrblCoord, GrblCoord)> {
     // e.g. <Idle|MPos:0.000,0.000,0.000|FS:0,0|Pn:P|WCO:5.000,0.000,0.000>
-    if !resp.starts_with("<") {
-        None?
-    }
-    let items: Vec<&str> = resp.split("|").collect();
-    if items.len() < 2 {
-        None?
-    }
-    let _mpos: Vec<&str> = items[1].split(":").collect();
-    if _mpos.len() < 2 {
-        None?
-    }
-    let mpos: Vec<&str> = match _mpos[0] {
-        "MPos" => _mpos[1].split(",").collect(),
-        _ => None?,
-    };
-    if mpos.len() < 2 {
-        None?
-    }
+    let mut items = resp.split("|");
+    let mut _mpos = items.find(|s| s.starts_with("MPos:"))?.split(":");
+    _mpos.next()?;
+    let mut mpos = _mpos.next()?.split(",");
     // xref https://github.com/Hamlib/Hamlib/blob/1b3fb4a6a30652c37a45b38cd766f5de515231b3/rotators/grbltrk/grbltrk.c#L368-L370
     Some((
-        mpos[0].parse().ok()?,
-        mpos[1].parse().ok()?,
+        mpos.next()?.parse().ok()?,
+        mpos.next()?.parse().ok()?,
     ))
 }
 
@@ -116,8 +102,9 @@ impl UpstreamRotator for GrblTrker {
         let mut lines = incoming.lines();
         write!(&self.dev, "?")?;
         let resp = lines.next().unwrap()?;
+        resp.starts_with("<").ok_or(Error::from(InvalidData))?;
         let (x, y) = parse_status(&resp)
-            .ok_or_else(|| Error::from(InvalidData))?;
+            .ok_or(Error::from(InvalidData))?;
         Ok(Pos { az: from_grbl(x), el: from_grbl(y) })
     }
 
