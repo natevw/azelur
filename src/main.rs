@@ -1,154 +1,23 @@
+mod helpers;
+mod upstream;
+
 use std::io::{BufRead, BufReader, BufWriter, Result, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
-type Degrees = f32;
-type AzAngle = Degrees;
-type ElAngle = Degrees;
-
-#[derive(Default, Debug, Copy, Clone)]
-struct Pos {
-    az: AzAngle,
-    el: ElAngle,
-}
-
-impl std::ops::Sub for Pos {
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self::Output {
-        Self {
-            az: self.az - other.az,
-            el: self.el - other.el,
-        }
-    }
-}
-
-impl std::ops::Add for Pos {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self::Output {
-        Self {
-            az: self.az + other.az,
-            el: self.el + other.el,
-        }
-    }
-}
-
+use crate::upstream::UpstreamRotator;
+use crate::upstream::rotcl::Rotctled;
+use crate::helpers::{
+    AzAngle, Pos, parse_pair,
+    predict_rotation, recommended_midpoint,
+};
 
 #[derive(Default, Debug)]
 struct RotatorOfVirtuality {
     pos: Pos,
     adj: Pos,
-}
-
-// HT: https://stackoverflow.com/a/34969944/179583
-fn parse_pair<'a, I>(mut parts: I) -> Option<Pos>
-where
-    I: Iterator<Item = &'a str>,
-{
-    let az_part = parts.next()?;
-    let el_part = parts.next()?;
-
-    let az: Degrees = az_part.parse().ok()?;
-    let el: Degrees = el_part.parse().ok()?;
-    return Some(Pos { az, el });
-}
-
-trait UpstreamRotator {
-    fn read_pos(&self) -> Result<Pos>;
-    fn send_pos(&self, p: Pos) -> Result<()>;
-}
-
-#[derive(Debug, Clone)]
-struct Rotctled {
-    // HACK: we re-connect whenever reading/changing position!
-    // TODO: share a single/persistent upstream connection
-    addr: String,
-}
-
-impl UpstreamRotator for Rotctled {
-    fn read_pos(&self) -> Result<Pos> {
-        let upstream =  TcpStream::connect(&self.addr)?;
-        let incoming = BufReader::new(&upstream);
-        let mut lines = incoming.lines();
-        writeln!(&upstream, "p")?;
-        let pair = vec![
-            lines.next().unwrap()?,
-            lines.next().unwrap()?,
-        ];
-        parse_pair(pair.iter().map(String::as_str)).ok_or_else(|| std::io::ErrorKind::InvalidData.into())
-    }
-
-    fn send_pos(&self, mut p: Pos) -> Result<()> {
-        let upstream =  TcpStream::connect(&self.addr)?;
-        p.az %= 360.0;
-        if p.az < 0.0 {
-            p.az += 360.0;
-        }
-        eprintln!("upstream az => {}, el => {}", p.az, p.el);
-        writeln!(&upstream, "P {:.2} {:.2}", p.az, p.el)?;
-        Ok(())
-    }
-}
-
-// TODO: consider moving this to `UpstreamRotator` trait?
-fn predict_rotation(curr: AzAngle, dest: AzAngle) -> Degrees {
-    let naïve = dest - curr;
-    let rotation = naïve % 360.0;
-    if rotation > 180.0 {
-        rotation - 360.0
-    } else if rotation < -180.0 {
-        rotation + 360.0
-    } else {
-        rotation
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn simple_rotations() {
-        assert_eq!(
-            predict_rotation(5.0, 10.0), 5.0,
-        );
-        assert_eq!(
-            predict_rotation(10.0, 5.0), -5.0,
-        );
-        assert_eq!(
-            predict_rotation(365.0, 370.0), 5.0,
-        );
-        assert_eq!(
-            predict_rotation(365.0, 5.0), 0.0,
-        );
-        assert_eq!(
-            predict_rotation(365.0, -355.0), 0.0,
-        );
-        assert_eq!(
-            predict_rotation(0.0, 185.0), -175.0,
-        );
-        assert_eq!(
-            predict_rotation(0.0, -185.0), 175.0,
-        );
-        assert_eq!(
-            predict_rotation(0.0, -175.0), -175.0,
-        );
-        assert_eq!(
-            predict_rotation(360.0, 175.0), 175.0,
-        );
-        assert_eq!(
-            predict_rotation(-123456.0, 42.0), 18.0,
-        );
-        assert_eq!(
-            predict_rotation(-123456.0, -123467.0), -11.0,
-        );
-        assert_eq!(
-            predict_rotation(-123456.0, 123186.0), 42.0,
-        );
-    }
 }
 
 // HT: https://stackoverflow.com/questions/19605132/is-it-possible-to-use-global-variables-in-rust/76394993#76394993
@@ -165,28 +34,6 @@ fn get_max_winding() -> AzAngle {
 }
 
 const UNWIND_DELAY: Duration = Duration::from_millis(500);
-
-fn recommended_midpoint(
-    curr: AzAngle,
-    diff: &mut Degrees,
-    max_mag: AzAngle,
-) -> Option<AzAngle> {
-    let past_max = curr + *diff > max_mag;
-    let past_min = curr + *diff < -max_mag;
-    if past_max || past_min {
-        // find an intermediate 180º from halfway to dest
-        // e.g. we're at MAX_WINDING=360 and diff is +90:
-        // halfway is 405°, whose antipode is (45 ± 180)°
-        // if we go there, next diff should then unwind.
-        let antimid = curr + *diff / 2.0 + 180.0;
-        // adjust to newly intended (unwinding direction) difference
-        *diff = if past_max { *diff - 360.0 } else { *diff + 360.0 };
-        Some(antimid)
-    } else {
-        None
-    }
-}
-
 
 fn handle_client(
     stream: TcpStream,
@@ -304,7 +151,8 @@ fn main() -> Result<()> {
     let maxw = get_max_winding();
     assert!(maxw >= 180.0);  // anything less is nonsensical
     
-    let upstream = Rotctled { addr: rot_addr.clone() };
+    
+    let upstream = Rotctled::new(rot_addr);
     
     if let Ok(pos) = std::env::var("AZEL_INITIAL_POS") {
         let pos_parts = pos.split(" ");
