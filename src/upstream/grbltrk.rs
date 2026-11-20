@@ -33,6 +33,9 @@ fn from_grbl(coord: GrblCoord) -> Degrees {
 
 fn parse_status(resp: &str) -> Option<(GrblCoord, GrblCoord)> {
     // e.g. <Idle|MPos:0.000,0.000,0.000|FS:0,0|Pn:P|WCO:5.000,0.000,0.000>
+    if !resp.starts_with("<") {
+        None?
+    }
     let items: Vec<&str> = resp.split("|").collect();
     if items.len() < 2 {
         None?
@@ -78,6 +81,18 @@ mod tests {
             None,
         );
         assert_eq!(
+            parse_status("<||||>"),
+            None,
+        );
+        assert_eq!(
+            parse_status("<|>"),
+            None,
+        );
+        assert_eq!(
+            parse_status("<>"),
+            None,
+        );
+        assert_eq!(
             parse_status(""),
             None,
         );
@@ -100,13 +115,9 @@ impl UpstreamRotator for GrblTrker {
         let incoming = BufReader::new(&self.dev);
         let mut lines = incoming.lines();
         write!(&self.dev, "?")?;
-        let resp = loop {
-            let line = lines.next().unwrap()?;
-            if line.starts_with("<") {
-                break line
-            }
-        };
-        let (x, y) = parse_status(&resp).ok_or_else(|| Error::from(InvalidData))?;
+        let resp = lines.next().unwrap()?;
+        let (x, y) = parse_status(&resp)
+            .ok_or_else(|| Error::from(InvalidData))?;
         Ok(Pos { az: from_grbl(x), el: from_grbl(y) })
     }
 
