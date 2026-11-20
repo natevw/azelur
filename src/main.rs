@@ -93,7 +93,7 @@ impl UpstreamRotator for Rotctled {
     }
 }
 
-
+// TODO: consider moving this to `UpstreamRotator` trait?
 fn predict_rotation(curr: AzAngle, dest: AzAngle) -> Degrees {
     let naïve = dest - curr;
     let rotation = naïve % 360.0;
