@@ -123,3 +123,25 @@ pub fn recommended_midpoint(
         None
     }
 }
+
+
+// HT: https://internals.rust-lang.org/t/why-is-there-no-tryclone-trait/19977
+pub(crate) trait TryClone: Sized {
+    fn try_clone(&self) -> std::io::Result<Self>;
+}
+
+impl TryClone for std::fs::File {
+    fn try_clone(&self) -> std::io::Result<Self> {
+        // Resolves to the inherent `File::try_clone`, not this trait method,
+        // because inherent methods take priority over trait methods.
+        Self::try_clone(self)
+    }
+}
+
+impl TryClone for std::net::TcpStream {
+    fn try_clone(&self) -> std::io::Result<Self> {
+        // Resolves to the inherent `File::try_clone`, not this trait method,
+        // because inherent methods take priority over trait methods.
+        Self::try_clone(self)
+    }
+}

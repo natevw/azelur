@@ -1,8 +1,7 @@
 use std::io::{BufRead, BufReader, Result, Read, Write, Error};
 use std::io::ErrorKind::InvalidData;
 
-use std::fs::File;
-use crate::helpers::{Pos, Degrees};
+use crate::helpers::{Pos, Degrees, TryClone};
 use crate::UpstreamRotator;
 
 // xref https://github.com/Hamlib/Hamlib/blob/master/rotators/grbltrk/grbltrk.c
@@ -17,20 +16,6 @@ impl<T: Read + Write> GrblTrker<T> {
         Self { dev }
     }
 }
-
-// HT: https://internals.rust-lang.org/t/why-is-there-no-tryclone-trait/19977
-trait TryClone: Sized {
-    fn try_clone(&self) -> Result<Self>;
-}
-
-impl TryClone for File {
-    fn try_clone(&self) -> Result<Self> {
-        // Resolves to the inherent `File::try_clone`, not this trait method,
-        // because inherent methods take priority over trait methods.
-        File::try_clone(self)
-    }
-}
-
 
 type GrblCoord = f32;
 

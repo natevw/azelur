@@ -1,30 +1,28 @@
-use std::io::{BufRead, BufReader, Result, Write};
-use std::net::TcpStream;
+use std::io::{BufRead, BufReader, Result, Read, Write};
+
 
 use crate::UpstreamRotator;
-use crate::helpers::{Pos, parse_pair};
+use crate::helpers::{Pos, parse_pair, TryClone};
 
 #[derive(Debug, Clone)]
-pub struct Rotctled {
-    // HACK: we re-connect whenever reading/changing position!
-    // TODO: share a single/persistent upstream connection
-    addr: String,
+pub struct Rotctled<T: Read + Write> {
+    sock: T,
 }
 
-impl Rotctled {
-    pub fn new(addr: impl Into<String>) -> Self {
-        Self {
-            addr: addr.into()
-        }
+// new(addr: impl Into<String>)
+
+impl<T: Read + Write> Rotctled<T> {
+    pub fn new(sock: T) -> Self {
+        Self { sock }
     }
 }
 
-impl UpstreamRotator for Rotctled {
+impl<T: Read + Write + TryClone> UpstreamRotator for Rotctled<T> {
     fn read_pos(&self) -> Result<Pos> {
-        let upstream =  TcpStream::connect(&self.addr)?;
-        let incoming = BufReader::new(&upstream);
+        let mut outgoing = self.sock.try_clone()?;
+        let incoming = BufReader::new(self.sock.try_clone()?);
         let mut lines = incoming.lines();
-        writeln!(&upstream, "p")?;
+        writeln!(outgoing, "p")?;
         let pair = vec![
             lines.next().unwrap()?,
             lines.next().unwrap()?,
@@ -33,13 +31,13 @@ impl UpstreamRotator for Rotctled {
     }
 
     fn send_pos(&self, mut p: Pos) -> Result<()> {
-        let upstream =  TcpStream::connect(&self.addr)?;
+        let mut outgoing = self.sock.try_clone()?;
         p.az %= 360.0;
         if p.az < 0.0 {
             p.az += 360.0;
         }
         eprintln!("upstream az => {}, el => {}", p.az, p.el);
-        writeln!(&upstream, "P {:.2} {:.2}", p.az, p.el)?;
+        writeln!(outgoing, "P {:.2} {:.2}", p.az, p.el)?;
         Ok(())
     }
 }

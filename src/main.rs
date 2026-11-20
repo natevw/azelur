@@ -156,7 +156,8 @@ fn main() -> Result<()> {
         let device = std::fs::File::open(rot_addr)?;
         Box::new(GrblTrker::new(device))
     } else {
-        Box::new(Rotctled::new(rot_addr))
+        let socket = TcpStream::connect(rot_addr)?;
+        Box::new(Rotctled::new(socket))
     };
     
     let upstream = Arc::new(Mutex::new(_upstream));
