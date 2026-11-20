@@ -24,6 +24,15 @@ Builds a single binary. Takes two required arguments:
 
 From this repo it can be started via e.g. `cargo run localhost:4533 192.168.42.209:4533`.
 
+or:  **[in progress — not currently working yet!]**
+
+`azelur <listen_addr:port> <serial_device>`
+
+1. the local socket to listen on (e.g. `localhost:4533` or `0.0.0.0:4242`…)
+2. a locally attached [grbltrk](https://github.com/Hamlib/Hamlib/tree/master/rotators/grbltrk) to control (e.g. `/dev/tty.usb0`)
+  * must be an absolute path, i.e. starting with a `/` to be detected
+  * the device must already be set to the correct baud rate, etc.
+
 Also supports some optional environment variables:
 
 * `AZEL_INITIAL_ADJ` — a string containing any initial `"<az_adj> <el_adj>"` values you want to pre-populate

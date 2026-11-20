@@ -7,8 +7,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
-use crate::upstream::UpstreamRotator;
-use crate::upstream::rotcl::Rotctled;
+use crate::upstream::{UpstreamRotator, Rotctled, GrblTrker};
 use crate::helpers::{
     AzAngle, Pos, parse_pair,
     predict_rotation, recommended_midpoint,
@@ -38,7 +37,7 @@ const UNWIND_DELAY: Duration = Duration::from_millis(500);
 fn handle_client(
     stream: TcpStream,
     virt: Arc<Mutex<RotatorOfVirtuality>>,
-    rot: &impl UpstreamRotator,
+    rot: Arc<Mutex<Box<dyn UpstreamRotator + Send>>>,
 ) -> Result<()> {
     let incoming = BufReader::new(&stream);
     
@@ -52,6 +51,7 @@ fn handle_client(
         eprintln!("{}: {}", stream.peer_addr().unwrap(), line);
         
         let mut virt = virt.lock().unwrap();
+        let rot = rot.lock().unwrap();
         let mut parts = line.split_ascii_whitespace();
         let cmd = parts.next();
         let Some(cmd) = cmd else {
@@ -152,7 +152,13 @@ fn main() -> Result<()> {
     assert!(maxw >= 180.0);  // anything less is nonsensical
     
     
-    let upstream = Rotctled::new(rot_addr);
+    let _upstream: Box<dyn UpstreamRotator + Send> = if rot_addr.starts_with("/") {
+        Box::new(GrblTrker::new(rot_addr))
+    } else {
+        Box::new(Rotctled::new(rot_addr))
+    };
+    
+    let upstream = Arc::new(Mutex::new(_upstream));
     
     if let Ok(pos) = std::env::var("AZEL_INITIAL_POS") {
         let pos_parts = pos.split(" ");
@@ -161,7 +167,8 @@ fn main() -> Result<()> {
         let mut virt = rotation_state.lock().unwrap();
         virt.pos = pos;
     } else {
-        let real = upstream.read_pos()?;
+        let rot = upstream.lock().unwrap();
+        let real = rot.read_pos()?;
         eprintln!("Current upstream position is {:.2} {:.2}", real.az, real.el);
         let mut virt = rotation_state.lock().unwrap();
         virt.pos = real - virt.adj;
@@ -170,12 +177,12 @@ fn main() -> Result<()> {
     
     for stream in listener.incoming() {
         let stream = stream?;
-        let upstream = upstream.clone();
+        let rotator = Arc::clone(&upstream);
         let state = Arc::clone(&rotation_state);
         let peer = stream.peer_addr().unwrap();
         thread::spawn(move || {
             eprintln!("Connection from {}", peer);
-            handle_client(stream, state, &upstream).unwrap();
+            handle_client(stream, state, rotator).unwrap();
             eprintln!("Done with {}", peer);
         });
     }
