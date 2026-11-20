@@ -1,4 +1,4 @@
-pub mod rotcl;
+pub mod rotctl;
 pub mod grbltrk;
 
 use std::io::Result;
@@ -9,5 +9,5 @@ pub trait UpstreamRotator {
     fn send_pos(&self, p: Pos) -> Result<()>;
 }
 
-pub use rotcl::Rotctled;
+pub use rotctl::Rotctled;
 pub use grbltrk::GrblTrker;
