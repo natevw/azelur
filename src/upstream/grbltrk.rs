@@ -92,7 +92,7 @@ impl<T: Read + Write + TryClone> UpstreamRotator for GrblTrker<T> {
         resp.starts_with("<").ok_or(Error::from(InvalidData))?;
         let (x, y) = parse_status(&resp)
             .ok_or(Error::from(InvalidData))?;
-        Ok(Pos { az: from_grbl(x), el: from_grbl(y) })
+        Ok(Pos { az: from_grbl(x), el: from_grbl(-y) })
     }
 
     fn send_pos(&self, mut p: Pos) -> Result<()> {
@@ -103,7 +103,7 @@ impl<T: Read + Write + TryClone> UpstreamRotator for GrblTrker<T> {
         }
         let (x, y) = (
             to_grbl(p.az),
-            to_grbl(p.el),
+            -to_grbl(p.el),
         );
         eprintln!("upstream X => {}, Y => {}", x, y);
         // xref https://github.com/Hamlib/Hamlib/blob/1b3fb4a6a30652c37a45b38cd766f5de515231b3/rotators/grbltrk/grbltrk.c#L313
