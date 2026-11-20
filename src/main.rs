@@ -56,41 +56,44 @@ where
     return Some(Pos { az, el });
 }
 
-fn send_pos(
-    upstream_addr: &str,
-    virt: &RotatorOfVirtuality
-) -> Result<()> {
-    // HACK: we re-connect whenever position needs changing!
-    // TODO: share a single/persistent upstream connection
-    let upstream =  TcpStream::connect(upstream_addr)?;
-    
-    let _upstream_az = (virt.pos.az + virt.adj.az) % 360.0;
-    let upstream_az = if _upstream_az < 0.0 {
-        _upstream_az + 360.0
-    } else {
-        _upstream_az
-    };
-    
-    let upstream_el = virt.pos.el + virt.adj.el;
-    
-    eprintln!("upstream az => {upstream_az}, el => {upstream_el}");
-    writeln!(&upstream, "P {:.2} {:.2}", upstream_az, upstream_el)?;
-    Ok(())
+trait UpstreamRotator {
+    fn read_pos(&self) -> Result<Pos>;
+    fn send_pos(&self, p: Pos) -> Result<()>;
 }
 
-fn get_pos(
-    upstream_addr: &str,
-) -> Result<Pos> {
-    let upstream =  TcpStream::connect(upstream_addr)?;
-    let incoming = BufReader::new(&upstream);
-    let mut lines = incoming.lines();
-    writeln!(&upstream, "p")?;
-    let pair = vec![
-        lines.next().unwrap()?,
-        lines.next().unwrap()?,
-    ];
-    parse_pair(pair.iter().map(String::as_str)).ok_or_else(|| std::io::ErrorKind::InvalidData.into())
+#[derive(Debug, Clone)]
+struct Rotctled {
+    addr: String,
 }
+
+impl UpstreamRotator for Rotctled {
+    // HACK: we re-connect whenever reading/changing position!
+    // TODO: share a single/persistent upstream connection
+    
+    fn read_pos(&self) -> Result<Pos> {
+        let upstream =  TcpStream::connect(&self.addr)?;
+        let incoming = BufReader::new(&upstream);
+        let mut lines = incoming.lines();
+        writeln!(&upstream, "p")?;
+        let pair = vec![
+            lines.next().unwrap()?,
+            lines.next().unwrap()?,
+        ];
+        parse_pair(pair.iter().map(String::as_str)).ok_or_else(|| std::io::ErrorKind::InvalidData.into())
+    }
+
+    fn send_pos(&self, mut p: Pos) -> Result<()> {
+        let upstream =  TcpStream::connect(&self.addr)?;
+        p.az %= 360.0;
+        if p.az < 0.0 {
+            p.az += 360.0;
+        }
+        eprintln!("upstream az => {}, el => {}", p.az, p.el);
+        writeln!(&upstream, "P {:.2} {:.2}", p.az, p.el)?;
+        Ok(())
+    }
+}
+
 
 fn predict_rotation(curr: AzAngle, dest: AzAngle) -> Degrees {
     let naïve = dest - curr;
@@ -188,8 +191,8 @@ fn recommended_midpoint(
 
 fn handle_client(
     stream: TcpStream,
-    rotator: Arc<Mutex<RotatorOfVirtuality>>,
-    upstream_addr: &str,
+    virt: Arc<Mutex<RotatorOfVirtuality>>,
+    rot: &impl UpstreamRotator,
 ) -> Result<()> {
     let incoming = BufReader::new(&stream);
     
@@ -202,7 +205,7 @@ fn handle_client(
         let line = line?;
         eprintln!("{}: {}", stream.peer_addr().unwrap(), line);
         
-        let mut rotator = rotator.lock().unwrap();
+        let mut virt = virt.lock().unwrap();
         let mut parts = line.split_ascii_whitespace();
         let cmd = parts.next();
         let Some(cmd) = cmd else {
@@ -210,8 +213,8 @@ fn handle_client(
         };
         match cmd {
             "p" | "\\get_pos" => {
-                writeln!(outgoing, "{:.2}", rotator.pos.az)?;
-                writeln!(outgoing, "{:.2}", rotator.pos.el)?;
+                writeln!(outgoing, "{:.2}", virt.pos.az)?;
+                writeln!(outgoing, "{:.2}", virt.pos.el)?;
             },
             "P" | "\\set_pos" => {
                 let Some(pos) = parse_pair(parts) else {
@@ -221,7 +224,7 @@ fn handle_client(
                 };
                 writeln!(outgoing, "RPRT 0")?;
                 
-                let az_curr = rotator.pos.az;
+                let az_curr = virt.pos.az;
                 let mut az_diff = predict_rotation(az_curr, pos.az);
                 if let Some(mid_az) = recommended_midpoint(
                     az_curr,
@@ -229,28 +232,28 @@ fn handle_client(
                     get_max_winding(),
                 ) {
                     eprint!("⤺");
-                    rotator.pos.az = mid_az;
+                    let mid_pos = Pos { az: mid_az, el: virt.pos.el };
                     // CAUTION: if upstream doesn't start this step by end of delay,
                     // the main `send_pos` below will supersede this unwind request!
-                    send_pos(upstream_addr, &rotator)?;
+                    rot.send_pos(mid_pos + virt.adj)?;
                     thread::sleep(UNWIND_DELAY);
                 }
                 // we accumulate predicted upstream rotation into `virt.pos`
-                rotator.pos = Pos { az: az_curr + az_diff, el: pos.el };
-                send_pos(upstream_addr, &rotator)?;
+                virt.pos = Pos { az: az_curr + az_diff, el: pos.el };
+                rot.send_pos(virt.pos + virt.adj)?;
             },
             "x" | "\\get_adj" => {
-                writeln!(outgoing, "{:.2}", rotator.adj.az)?;
-                writeln!(outgoing, "{:.2}", rotator.adj.el)?;
+                writeln!(outgoing, "{:.2}", virt.adj.az)?;
+                writeln!(outgoing, "{:.2}", virt.adj.el)?;
             },
             "X" | "\\set_adj" => {
                 let Some(adj) = parse_pair(parts) else {
                     writeln!(outgoing, "RPRT -1")?;
                     continue;
                 };
-                rotator.adj = adj;
+                virt.adj = adj;
                 writeln!(outgoing, "RPRT 0")?;
-                send_pos(upstream_addr, &rotator)?;
+                rot.send_pos(virt.pos + virt.adj)?;
             },
             "W" | "\\want_pos" => {
                 // change adjustment so rotator reads as desired
@@ -261,9 +264,9 @@ fn handle_client(
                 //     sent = virt.pos + virt.adj
                 // keep `sent` same while making `virt.pos = wanted`
                 // i.e. `virt0.pos + virt0.adj = wanted + virt1.adj`
-                let sent = rotator.pos + rotator.adj;
-                rotator.adj = sent - wanted;
-                rotator.pos = wanted;
+                let sent = virt.pos + virt.adj;
+                virt.adj = sent - wanted;
+                virt.pos = wanted;
                 writeln!(outgoing, "RPRT 0")?;
             },
             _ => continue,
@@ -285,45 +288,47 @@ fn main() -> Result<()> {
     eprintln!("Upstream is: {}", rot_addr);
     
     let listener = TcpListener::bind(our_addr)?;
-    let rotator = Arc::new(Mutex::new(
+    let rotation_state = Arc::new(Mutex::new(
         RotatorOfVirtuality::default()
     ));
-    
-    // ~HACK: trigger any parse error on startup
-    let maxw = get_max_winding();
-    assert!(maxw >= 180.0);  // anything less is nonsensical
     
     if let Ok(adj) = std::env::var("AZEL_INITIAL_ADJ") {
         let adj_parts = adj.split(" ");
         let adj = parse_pair(adj_parts).unwrap();
         eprintln!("Setting initial adjustment of {:.2} {:.2}", adj.az, adj.el);
         
-        let mut rot = rotator.lock().unwrap();
-        rot.adj = adj;
+        let mut virt = rotation_state.lock().unwrap();
+        virt.adj = adj;
     }
+    
+    // ~HACK: trigger any parse error on startup
+    let maxw = get_max_winding();
+    assert!(maxw >= 180.0);  // anything less is nonsensical
+    
+    let upstream = Rotctled { addr: rot_addr.clone() };
     
     if let Ok(pos) = std::env::var("AZEL_INITIAL_POS") {
         let pos_parts = pos.split(" ");
         let pos = parse_pair(pos_parts).unwrap();
         eprintln!("Setting initial position to {:.2} {:.2}", pos.az, pos.el);
-        let mut rot = rotator.lock().unwrap();
-        rot.pos = pos;
+        let mut virt = rotation_state.lock().unwrap();
+        virt.pos = pos;
     } else {
-        let real = get_pos(rot_addr)?;
+        let real = upstream.read_pos()?;
         eprintln!("Current upstream position is {:.2} {:.2}", real.az, real.el);
-        let mut rot = rotator.lock().unwrap();
-        rot.pos = real - rot.adj;
-        //eprintln!("{:#?}", rot);
+        let mut virt = rotation_state.lock().unwrap();
+        virt.pos = real - virt.adj;
+        //eprintln!("{:#?}", virt);
     }
     
     for stream in listener.incoming() {
         let stream = stream?;
-        let upstream = rot_addr.clone();
-        let rotator = Arc::clone(&rotator);
+        let upstream = upstream.clone();
+        let state = Arc::clone(&rotation_state);
         let peer = stream.peer_addr().unwrap();
         thread::spawn(move || {
             eprintln!("Connection from {}", peer);
-            handle_client(stream, rotator, &upstream).unwrap();
+            handle_client(stream, state, &upstream).unwrap();
             eprintln!("Done with {}", peer);
         });
     }
