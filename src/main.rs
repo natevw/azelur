@@ -63,13 +63,12 @@ trait UpstreamRotator {
 
 #[derive(Debug, Clone)]
 struct Rotctled {
+    // HACK: we re-connect whenever reading/changing position!
+    // TODO: share a single/persistent upstream connection
     addr: String,
 }
 
 impl UpstreamRotator for Rotctled {
-    // HACK: we re-connect whenever reading/changing position!
-    // TODO: share a single/persistent upstream connection
-    
     fn read_pos(&self) -> Result<Pos> {
         let upstream =  TcpStream::connect(&self.addr)?;
         let incoming = BufReader::new(&upstream);
